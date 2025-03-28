@@ -52,8 +52,7 @@ module.exports = {
 
 async function warn(issuer, target, reason) {
   const response = await warnTarget(issuer, target, reason);
-  if (typeof response === "boolean") return `${target.user.username} is warned!`;
-  if (response === "BOT_PERM") return `I do not have permission to warn ${target.user.username}`;
-  else if (response === "MEMBER_PERM") return `You do not have permission to warn ${target.user.username}`;
+  if (typeof response === "boolean") return `**${target.user.username} has been warned!**`;
+  if (response === "MEMBER_PERM") return `**You do not have permission to warn ${target.user.username}**`;
   else return `Failed to warn ${target.user.username}`;
 }

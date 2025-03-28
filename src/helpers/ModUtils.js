@@ -1,5 +1,6 @@
 const { Collection, EmbedBuilder, GuildMember } = require("discord.js");
 const { MODERATION } = require("@root/config");
+const moment = require('moment-timezone');
 
 // Utils
 const { containsLink } = require("@helpers/Utils");
@@ -237,23 +238,36 @@ module.exports = class ModUtils {
    * @param {string} reason
    */
   static async warnTarget(issuer, target, reason) {
-    if (!memberInteract(issuer, target)) return "MEMBER_PERM";
-    if (!memberInteract(issuer.guild.members.me, target)) return "BOT_PERM";
-
     try {
-      logModeration(issuer, target, reason, "Warn");
       const memberDb = await getMember(issuer.guild.id, target.id);
-      memberDb.warnings += 1;
+      const warnNumber = memberDb.warnings + 1;
+      const targetTimezone = target.user.locale || 'America/Chicago';
+      const localTime = moment().tz(targetTimezone).format('M/D/YYYY @ h:mmA');
+  
+      // Log with custom embed
+      const embed = new EmbedBuilder()
+        .setTitle(`Warning: #${warnNumber} | ${target.user.username}`)
+        .setColor(14621754)
+        .setThumbnail(target.user.displayAvatarURL())
+        .addFields(
+          { name: "User", value: `${target.user}`, inline: true },
+          { name: "Moderator", value: `${issuer.user}`, inline: true },
+          { name: "Reason", value: reason || "No reason", inline: true }
+        )
+        .setFooter({ text: `Warned on ${localTime}` });
+  
+      // Send to modlog
       const settings = await getSettings(issuer.guild);
-
-      // check if max warnings are reached
-      if (memberDb.warnings >= settings.max_warn.limit) {
-        await ModUtils.addModAction(issuer.guild.members.me, target, "Max warnings reached", settings.max_warn.action); // moderate
-        memberDb.warnings = 0; // reset warnings
+      if (settings.modlog_channel) {
+        const logChannel = issuer.guild.channels.cache.get(settings.modlog_channel);
+        if (logChannel) await logChannel.send({ embeds: [embed] });
       }
-
+  
+      // Update database
+      memberDb.warnings = warnNumber;
       await memberDb.save();
       return true;
+  
     } catch (ex) {
       error("warnTarget", ex);
       return "ERROR";
@@ -350,21 +364,51 @@ module.exports = class ModUtils {
    * @param {import('discord.js').User} target
    * @param {string} reason
    */
-  static async banTarget(issuer, target, reason) {
-    const targetMem = await issuer.guild.members.fetch(target.id).catch(() => {});
 
-    if (targetMem && !memberInteract(issuer, targetMem)) return "MEMBER_PERM";
-    if (targetMem && !memberInteract(issuer.guild.members.me, targetMem)) return "BOT_PERM";
+static async banTarget(issuer, target, reason) {
+  const targetMem = await issuer.guild.members.fetch(target.id).catch(() => {});
+  const targetTimezone = target.locale || targetMem?.user?.locale || 'America/Chicago';
+  const localTime = moment().tz(targetTimezone).format('M/D/YYYY @ h:mmA');
 
-    try {
-      await issuer.guild.bans.create(target.id, { days: 0, reason });
-      logModeration(issuer, target, reason, "Ban");
-      return true;
-    } catch (ex) {
-      error(`banTarget`, ex);
-      return "ERROR";
+  if (targetMem && !memberInteract(issuer, targetMem)) return "MEMBER_PERM";
+  if (targetMem && !memberInteract(issuer.guild.members.me, targetMem)) return "BOT_PERM";
+
+  try {
+    await issuer.guild.bans.create(target.id, { days: 0, reason });
+const embed = new EmbedBuilder()
+  .setTitle(`Ban Hammer Has struck! | ${target.username}`)
+  .setColor(65296)
+  .setThumbnail(target.displayAvatarURL())
+  .addFields(
+    { 
+      name: "User", 
+      value: `<@${target.id}>`,
+      inline: true 
+    },
+    { 
+      name: "Moderator", 
+      value: `<@${issuer.user.id}>`,
+      inline: true 
+    },
+    { 
+      name: "Reason", 
+      value: reason || "No reason provided", 
+      inline: true 
     }
+  )
+  .setFooter({ text: `Banned on ${localTime}` });
+    const settings = await getSettings(issuer.guild);
+    if (settings.modlog_channel) {
+      const logChannel = issuer.guild.channels.cache.get(settings.modlog_channel);
+      if (logChannel) await logChannel.send({ embeds: [embed] });
+    }
+    return true;
+  } catch (ex) {
+    error(`banTarget`, ex);
+    return "ERROR";
   }
+}
+
 
   /**
    * Bans the target and logs to the database, channel
