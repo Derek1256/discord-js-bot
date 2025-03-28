@@ -20,6 +20,9 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
@@ -30,10 +33,12 @@ jobs:
       - name: Get latest tag from GitHub Container Registry
         id: latest_tag
         run: |
-          LATEST_TAG=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-          "https://ghcr.io/v2/${{ github.repository_owner }}/discord-js-bot/tags/list" \
-          | jq -r '.tags | map(select(test("^([0-9]+\\.[0-9]+\\.[0-9]+)$"))) | max')
-          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          response=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://ghcr.io/v2/${{ github.repository_owner }}/discord-js-bot/tags/list")
+          latest_tag=$(echo $response | jq -r '.tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) | max')
+          if [ "$latest_tag" == "null" ]; then
+            latest_tag="0.0.0"
+          fi
+          echo "LATEST_TAG=$latest_tag" >> $GITHUB_ENV
 
       - name: Calculate next version
         id: next_version
